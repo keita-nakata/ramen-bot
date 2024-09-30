@@ -6,5 +6,10 @@
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "MYSELF"
-  }
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/vision",
+    "https://www.googleapis.com/auth/drive" 
+  ]
 }

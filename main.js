@@ -4,37 +4,16 @@ const USER_ID = PropertiesService.getScriptProperties().getProperty("USER_ID");
 const LINE_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_TOKEN");
 const HOTPEPPER_API_KEY = PropertiesService.getScriptProperties().getProperty("HOTPEPPER_API_KEY");
 const SHEET_ID = PropertiesService.getScriptProperties().getProperty("SHEET_ID");
+const GCP_PROJECT_ID = PropertiesService.getScriptProperties().getProperty("GCP_PROJECT_ID");
+const VISION_API_KEY = PropertiesService.getScriptProperties().getProperty("VISION_API_KEY");
+const ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("ACCESS_TOKEN");
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";  //リプライメッセージ送信
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";    //プッシュメッセージ送信
 const LINE_IMAGE_BASE_URL = "https://api-data.line.me/v2/bot/message/"
 const HOTPEPPER_URL = "http://webservice.recruit.co.jp/hotpepper/gourmet/v1/"; //ホットペッパーのURL
 const HOTPEPPER_RAMEN_CODE = "G013"; //ラーメンのコード
-const VISION_BASE_URL = "https://vision.googleapis.com";
+const VISION_BASE_URL = "https://vision.googleapis.com/v1/images:annotate";
 const MAX_REPLY = 3;
-
-function test() {
-  let latitude = 35.65;
-  let longitude = 139.54;
-
-  let ramenList = getRamenList(latitude, longitude);
-  let ramenGenreList = allRamenClassify(ramenList);
-
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  const sheet = ss.getSheets()[0];
-  let i, result = ramenList.results;
-  sheet.clearContents();
-  for (i = 0; i < result.results_returned; i++) {
-    sheet.appendRow([
-      USER_ID,
-      result.shop[i].name,
-      ramenGenreList[i],
-      result.shop[i].urls.pc,
-      result.shop[i].catch,
-      result.shop[i].shop_detail_memo,
-      result.shop[i].genre.catch, //これが一番情報持っとる
-    ]);
-  }
-}
 
 function doPost(e) {
   console.log("doPost");
@@ -80,7 +59,6 @@ function doPost(e) {
 
       let faceJson = JSON.parse(faceResponse);
 
-      //console.log(faceJson);
       console.log(faceJson[0].faceAttributes.emotion);
       let mainEmotion = emotionClassify(faceJson);
 
@@ -173,7 +151,7 @@ function classifyRamen(ramenData) {
       maxCol = i;
     }
   }
-  
+
   //すべて０のときジャンルは３になる
   if (max == 0) {
     maxCol = 3;
@@ -244,12 +222,12 @@ function replyMessage(lineJson, mainEmotion, targetValues) {
   };
 
   // ラーメン屋情報を追加
-  if(targetValues.length == 0){
+  if (targetValues.length == 0) {
     replyPayload.messages.push({
       "type": "text",
       "text": "おすすめのラーメン屋が見つかりませんでした。"
     });
-  }else{
+  } else {
     for (let i = 0; i < Math.min(targetValues.length, MAX_REPLY); i++) {
       replyPayload.messages.push({
         "type": "text",
@@ -264,5 +242,58 @@ function replyMessage(lineJson, mainEmotion, targetValues) {
     "contentType": "application/json",
     "payload": JSON.stringify(replyPayload)
   });
+}
 
+function useCloudVision(fileId, cvApiKey, cvBaseUrl, projectId) {
+  const accessToken = ScriptApp.getOAuthToken();
+  const file = DriveApp.getFileById(fileId); // Google Driveからファイルを取得
+  const imageBlob = file.getBlob(); // ファイルをBlob形式で取得
+  const base64Image = Utilities.base64Encode(imageBlob.getBytes()); // 画像データをBase64に変換
+
+  let visionRequest = {
+    "requests": [
+      {
+        "image": {
+          "content": base64Image
+        },
+        "features": [
+          {
+            "type": "FACE_DETECTION",
+            "maxResults": 1
+          }
+        ]
+      }
+    ]
+  };
+
+  let visionResponse = UrlFetchApp.fetch(cvBaseUrl + "?key=" + cvApiKey, {
+    "method": "POST",
+    "headers": {
+      "Authorization": `Bearer ${accessToken}`,
+      "x-goog-user-project": projectId,
+      "contentType": "application/json",
+    },
+    "payload": JSON.stringify(visionRequest),
+    "muteHttpExceptions": true
+  });
+  console.log(visionResponse.getContentText());
+  let mainEmotion = emotionClassify(faceJson);
+}
+
+function setScopes() {
+  const scopes = [
+    'https://www.googleapis.com/auth/cloud-platform'
+  ];
+  const manifest = {
+    "oauthScopes": scopes
+  };
+  const scriptId = ScriptApp.getScriptId();
+  DriveApp.getFileById(scriptId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    ScriptApp.deleteTrigger(trigger);
+  });
+  ScriptApp.newTrigger('yourFunction')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
 }
